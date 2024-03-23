@@ -15,6 +15,5 @@ target_include_directories(C5T_POPEN2 INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}")
 #enable_testing() <-- commented out by design.
 add_executable(popen2_test popen2_test.cc)
 get_property(C5T_PATH_VALUE GLOBAL PROPERTY C5T_PATH)
-message(STATUS "DIMA VALUE: ${C5T_PATH_VALUE}")
 target_include_directories(popen2_test PRIVATE ${C5T_PATH_VALUE})
 #add_test(NAME popen2_test COMMAND popen2_test) <-- commented out by design.
