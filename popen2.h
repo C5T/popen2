@@ -116,7 +116,7 @@ inline int popen2(std::vector<std::string> const& cmdline_,
                 return true;
               }
             },
-            [pid]() { kill(pid, SIGKILL); });
+            [pid]() { kill(pid, SIGTERM); });
       },
       std::move(cb_code),
       pipe_stdin[1],
