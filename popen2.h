@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <atomic>
 #include <iostream>
 
 #include <sys/types.h>
@@ -56,9 +57,9 @@ inline void pipe_and_keep_trying(int r[2]) {
 }
 
 inline int popen2(std::vector<std::string> const& cmdline_,
-    std::function<void(const std::string&)> cb_line,
-    std::function<void(std::function<void(std::string const&)>, std::function<void()>)> cb_code,
-    std::vector<std::string> const& env_ = {}) {
+                  std::function<void(const std::string&)> cb_line,
+                  std::function<void(std::function<void(std::string const&)>, std::function<void()>)> cb_code,
+                  std::vector<std::string> const& env_ = {}) {
   pid_t pid;
   int pipe_stdin[2];
   int pipe_stdout[2];
@@ -105,8 +106,12 @@ inline int popen2(std::vector<std::string> const& cmdline_,
   ::close(pipe_stdin[0]);
   ::close(pipe_stdout[1]);
 
+  std::shared_ptr<std::atomic_bool> already_done = std::make_shared<std::atomic_bool>(false);
   std::thread thread_user_code(
-      [](std::function<void(std::function<void(std::string const&)>, std::function<void()>)> cb_code, int write_fd, int pid) {
+      [copy_already_done = already_done](
+          std::function<void(std::function<void(std::string const&)>, std::function<void()>)> cb_code,
+          int write_fd,
+          int pid) {
         cb_code(
             [write_fd](std::string const& s) {
               ssize_t const n = write(write_fd, s.c_str(), s.length());
@@ -116,17 +121,19 @@ inline int popen2(std::vector<std::string> const& cmdline_,
                 return true;
               }
             },
-            [pid]() { kill(pid, SIGTERM); });
+            [pid, moved_already_done = std::move(copy_already_done)]() {
+              if (!*moved_already_done) {
+                *moved_already_done = true;
+                kill(pid, SIGTERM);
+              }
+            });
       },
       std::move(cb_code),
       pipe_stdin[1],
       pid);
 
   std::thread thread_reader(
-      [](
-      std::function<void(const std::string&)> cb_line,
-      int read_fd, int efd
-      ) {
+      [](std::function<void(const std::string&)> cb_line, int read_fd, int efd) {
         struct pollfd fds[2];
         fds[0].fd = read_fd;
         fds[0].events = POLLIN;
@@ -160,6 +167,7 @@ inline int popen2(std::vector<std::string> const& cmdline_,
       efd);
 
   ::waitpid(pid, NULL, 0);
+  *already_done = true;
 
   uint64_t u = 1;
   if (write(efd, &u, sizeof(uint64_t)) != sizeof(uint64_t)) {
