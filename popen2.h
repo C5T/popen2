@@ -1,6 +1,5 @@
 #pragma once
 
-#include <chrono>
 #include <atomic>
 #include <iostream>
 
@@ -31,29 +30,11 @@ static void MutableCStyleVectorStringsArg(const std::vector<std::string>& in, F&
   f(&out[0]);
 }
 
-inline void pipe_and_keep_trying(int r[2]) {
-#if 0
-  int exponential_delay_ms = 5;
-  for (int i = 0; i < 20; ++i) {
-    int const e = pipe(r);
-    if (!e) {
-      return;
-    } if (errno == 23 || errno == 24) {
-      // "Too many open files", sigh, worth it to try again.
-      std::this_thread::sleep_for(std::chrono::milliseconds(exponential_delay_ms));
-      exponential_delay_ms += exponential_delay_ms/2;
-    } else {
-      break;
-    }
-  }
-  std::cerr << "FATAL: " << __LINE__ << std::endl;
-  ::abort();
-#else
+inline void pipe_or_fail(int r[2]) {
   if (pipe(r)) {
     std::cerr << "FATAL: " << __LINE__ << std::endl;
     ::abort();
   }
-#endif
 }
 
 inline int popen2(std::vector<std::string> const& cmdline_,
@@ -64,8 +45,8 @@ inline int popen2(std::vector<std::string> const& cmdline_,
   int pipe_stdin[2];
   int pipe_stdout[2];
 
-  pipe_and_keep_trying(pipe_stdin);
-  pipe_and_keep_trying(pipe_stdout);
+  pipe_or_fail(pipe_stdin);
+  pipe_or_fail(pipe_stdout);
 
   int const efd = eventfd(0, 0);
   if (efd < 0) {
