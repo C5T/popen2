@@ -85,7 +85,9 @@ TEST(Popen2Test, ReadsStdin) {
 TEST(Popen2Test, ReadsStdinForever) {
   std::string result = "result:";
   popen2(
-      {"/usr/bin/bash", "-c", "while true; do read A; read B; C=$((A+B)); if [ $C == '0' ]; then exit; fi; echo $C; done"},
+      {"/usr/bin/bash",
+       "-c",
+       "while true; do read A; read B; C=$((A+B)); if [ $C == '0' ]; then exit; fi; echo $C; done"},
       [&result](std::string const& line) { result += ' ' + line; },
       [](std::function<void(std::string const&)> write, std::function<void()>) { write("1\n2\n3\n4\n0\n0\n"); });
   ASSERT_EQ(result, "result: 3 7");
