@@ -1,5 +1,8 @@
 #pragma once
 
+// TODO(dkorolev): Remove/refactor this one day, into `CMakeLists.txt` and/or the `Makefile`.
+#define C5T_POPEN2_H_INCLUDED
+
 #include <atomic>
 #include <iostream>
 
@@ -37,10 +40,18 @@ inline void pipe_or_fail(int r[2]) {
   }
 }
 
-inline int popen2(std::vector<std::string> const& cmdline_,
-                  std::function<void(const std::string&)> cb_line,
-                  std::function<void(std::function<void(std::string const&)>, std::function<void()>)> cb_code,
-                  std::vector<std::string> const& env_ = {}) {
+struct Popen2Runtime {
+  virtual ~Popen2Runtime() = default;
+  virtual void operator()(std::string const& write) = 0;
+  virtual void Kill() = 0;
+  // TODO(dkorolev): Add `.Close()` as well? And test it?
+};
+
+inline int popen2(
+    std::vector<std::string> const& cmdline,
+    std::function<void(const std::string&)> cb_line,
+    std::function<void(Popen2Runtime&)> cb_runtime = [](Popen2Runtime&) {},
+    std::vector<std::string> const& env = {}) {
   pid_t pid;
   int pipe_stdin[2];
   int pipe_stdout[2];
@@ -67,16 +78,16 @@ inline int popen2(std::vector<std::string> const& cmdline_,
     ::close(pipe_stdout[0]);
     dup2(pipe_stdout[1], 1);
 
-    if (env_.empty()) {
-      MutableCStyleVectorStringsArg(cmdline_, [&](char* const argv[]) {
-        int r = execvp(cmdline_[0].c_str(), argv);
+    if (env.empty()) {
+      MutableCStyleVectorStringsArg(cmdline, [&](char* const argv[]) {
+        int r = execvp(cmdline[0].c_str(), argv);
         std::cerr << "FATAL: " << __LINE__ << " R=" << r << ", errno=" << errno << std::endl;
         perror("execvp");
       });
     } else {
-      MutableCStyleVectorStringsArg(cmdline_, [&](char* const argv[]) {
-        MutableCStyleVectorStringsArg(env_, [&](char* const envp[]) {
-          int r = execvpe(cmdline_[0].c_str(), argv, envp);
+      MutableCStyleVectorStringsArg(cmdline, [&](char* const argv[]) {
+        MutableCStyleVectorStringsArg(env, [&](char* const envp[]) {
+          int r = execvpe(cmdline[0].c_str(), argv, envp);
           std::cerr << "FATAL: " << __LINE__ << " R=" << r << ", errno=" << errno << std::endl;
           perror("execvpe");
         });
@@ -89,27 +100,31 @@ inline int popen2(std::vector<std::string> const& cmdline_,
 
   std::shared_ptr<std::atomic_bool> already_done = std::make_shared<std::atomic_bool>(false);
   std::thread thread_user_code(
-      [copy_already_done = already_done](
-          std::function<void(std::function<void(std::string const&)>, std::function<void()>)> cb_code,
-          int write_fd,
-          int pid) {
-        cb_code(
-            [write_fd](std::string const& s) {
-              ssize_t const n = write(write_fd, s.c_str(), s.length());
-              if (n < 0 || static_cast<size_t>(n) != s.length()) {
-                return false;
-              } else {
-                return true;
-              }
-            },
-            [pid, moved_already_done = std::move(copy_already_done)]() {
-              if (!*moved_already_done) {
-                *moved_already_done = true;
-                kill(pid, SIGTERM);
-              }
-            });
+      [copy_already_done_or_killed = already_done](std::function<void(Popen2Runtime&)> cb_code, int write_fd, int pid) {
+        struct TrivialPopen2Runtime final : Popen2Runtime {
+          std::function<void(std::string const&)> write_;
+          std::function<void()> kill_;
+          void operator()(std::string const& data) override { write_(data); }
+          void Kill() override { kill_(); }
+        };
+        TrivialPopen2Runtime runtime_context;
+        runtime_context.write_ = [write_fd](std::string const& s) {
+          ssize_t const n = write(write_fd, s.c_str(), s.length());
+          if (n < 0 || static_cast<size_t>(n) != s.length()) {
+            return false;
+          } else {
+            return true;
+          }
+        };
+        runtime_context.kill_ = [pid, moved_already_done_or_killed = std::move(copy_already_done_or_killed)]() {
+          if (!*moved_already_done_or_killed) {
+            *moved_already_done_or_killed = true;
+            kill(pid, SIGTERM);
+          }
+        };
+        cb_code(runtime_context);
       },
-      std::move(cb_code),
+      std::move(cb_runtime),
       pipe_stdin[1],
       pid);
 
