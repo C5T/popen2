@@ -98,16 +98,18 @@ inline int popen2(
   ::close(pipe_stdin[0]);
   ::close(pipe_stdout[1]);
 
+  struct TrivialPopen2Runtime final : Popen2Runtime {
+    std::function<void(std::string const&)> write_;
+    std::function<void()> kill_;
+    void operator()(std::string const& data) override { write_(data); }
+    void Kill() override { kill_(); }
+  };
+  TrivialPopen2Runtime runtime_context;
+
   std::shared_ptr<std::atomic_bool> already_done = std::make_shared<std::atomic_bool>(false);
   std::thread thread_user_code(
-      [copy_already_done_or_killed = already_done](std::function<void(Popen2Runtime&)> cb_code, int write_fd, int pid) {
-        struct TrivialPopen2Runtime final : Popen2Runtime {
-          std::function<void(std::string const&)> write_;
-          std::function<void()> kill_;
-          void operator()(std::string const& data) override { write_(data); }
-          void Kill() override { kill_(); }
-        };
-        TrivialPopen2Runtime runtime_context;
+      [copy_already_done_or_killed = already_done, &runtime_context](
+          std::function<void(Popen2Runtime&)> cb_code, int write_fd, int pid) {
         runtime_context.write_ = [write_fd](std::string const& s) {
           ssize_t const n = write(write_fd, s.c_str(), s.length());
           if (n < 0 || static_cast<size_t>(n) != s.length()) {
