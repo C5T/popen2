@@ -1,5 +1,8 @@
 #pragma once
 
+// TODO(dkorolev): Remove/refactor this one day, into `CMakeLists.txt` and/or the `Makefile`.
+#define C5T_POPEN2_H_INCLUDED
+
 #include <atomic>
 #include <iostream>
 
@@ -37,10 +40,10 @@ inline void pipe_or_fail(int r[2]) {
   }
 }
 
-inline int popen2(std::vector<std::string> const& cmdline_,
+inline int popen2(std::vector<std::string> const& cmdline,
                   std::function<void(const std::string&)> cb_line,
                   std::function<void(std::function<void(std::string const&)>, std::function<void()>)> cb_code,
-                  std::vector<std::string> const& env_ = {}) {
+                  std::vector<std::string> const& env = {}) {
   pid_t pid;
   int pipe_stdin[2];
   int pipe_stdout[2];
@@ -67,16 +70,16 @@ inline int popen2(std::vector<std::string> const& cmdline_,
     ::close(pipe_stdout[0]);
     dup2(pipe_stdout[1], 1);
 
-    if (env_.empty()) {
-      MutableCStyleVectorStringsArg(cmdline_, [&](char* const argv[]) {
-        int r = execvp(cmdline_[0].c_str(), argv);
+    if (env.empty()) {
+      MutableCStyleVectorStringsArg(cmdline, [&](char* const argv[]) {
+        int r = execvp(cmdline[0].c_str(), argv);
         std::cerr << "FATAL: " << __LINE__ << " R=" << r << ", errno=" << errno << std::endl;
         perror("execvp");
       });
     } else {
-      MutableCStyleVectorStringsArg(cmdline_, [&](char* const argv[]) {
-        MutableCStyleVectorStringsArg(env_, [&](char* const envp[]) {
-          int r = execvpe(cmdline_[0].c_str(), argv, envp);
+      MutableCStyleVectorStringsArg(cmdline, [&](char* const argv[]) {
+        MutableCStyleVectorStringsArg(env, [&](char* const envp[]) {
+          int r = execvpe(cmdline[0].c_str(), argv, envp);
           std::cerr << "FATAL: " << __LINE__ << " R=" << r << ", errno=" << errno << std::endl;
           perror("execvpe");
         });
