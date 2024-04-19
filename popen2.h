@@ -1,8 +1,5 @@
 #pragma once
 
-// TODO(dkorolev): Remove/refactor this one day, into `CMakeLists.txt` and/or the `Makefile`.
-#define C5T_POPEN2_H_INCLUDED
-
 #include <atomic>
 #include <iostream>
 
