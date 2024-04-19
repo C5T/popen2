@@ -77,6 +77,7 @@ inline int popen2(
     dup2(pipe_stdin[0], 0);
     ::close(pipe_stdout[0]);
     dup2(pipe_stdout[1], 1);
+    dup2(pipe_stdout[1], 2);  // Capture `stderr` too.
 
     if (env.empty()) {
       MutableCStyleVectorStringsArg(cmdline, [&](char* const argv[]) {
